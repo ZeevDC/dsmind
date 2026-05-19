@@ -312,7 +312,7 @@
 
         const selectedChapter = document.getElementById("focus-select").value;
         
-        // 🎲 CRUCIAL SEED GENERATION: Randomize patient profiles dynamically
+        // Randomized patient profiles to ensure fresh variations every click
         const ageDemographics = ["a 6-year-old child accompanied by guardians", "a 17-year-old adolescent student", "a 24-year-old graduate", "a 42-year-old corporate worker", "a 71-year-old retiree"];
         const clinicalSettings = ["an outpatient therapy group", "an emergency department intake room", "a primary care consultation", "an inpatient psychiatric unit evaluation"];
         const presentationSeeds = ["presenting with nuanced atypical behaviors", "demonstrating a sudden increase in symptom severity", "managing complex psychosocial stressors", "exhibiting clear functional impairment in daily routines"];
@@ -321,10 +321,7 @@
         const randomSetting = clinicalSettings[Math.floor(Math.random() * clinicalSettings.length)];
         const randomSeed = presentationSeeds[Math.floor(Math.random() * presentationSeeds.length)];
 
-        const promptRules = `You are a professional clinical psychology board examiner drafting high-yield questions for licensing exams. Respond with ONLY raw JSON (no markdown wrappers): {"category": "Area", "vignette": "Vignette text...", "options": ["A","B","C","D"], "correctIndex": 0, "explanation": "Why..."}`;
-
         try {
-            // Updated to modern standard bearer system endpoint architecture using the randomized dynamic prompt instruction
             const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent`, {
                 method: "POST",
                 headers: { 
@@ -333,18 +330,44 @@
                 },
                 body: JSON.stringify({
                     contents: [{ parts: [{ text: `Draft an entirely unique, creative multiple-choice board vignette focusing explicitly on the diagnostic criteria for: ${selectedChapter}. The patient profile must specifically center around ${randomAge}, evaluated within ${randomSetting}, ${randomSeed}. Ensure options represent plausible differential diagnoses.` }] }],
-                    systemInstruction: { parts: [{ text: promptRules }] },
+                    systemInstruction: { parts: [{ text: "You are a professional clinical psychology board examiner drafting high-yield questions for licensing exams. You must strictly output the results according to the requested JSON structure schema." }] },
                     generationConfig: { 
                         responseMimeType: "application/json",
-                        temperature: 1.0 // 🔥 Higher temperature encourages maximum creativity/variety from the AI
+                        temperature: 0.9, // Balanced for great variety without formatting chaotic breakdowns
+                        // 🛠️ THE GOLDEN FIX: Strict schema definition rules out formatting errors
+                        responseSchema: {
+                            type: "OBJECT",
+                            properties: {
+                                category: { type: "STRING" },
+                                vignette: { type: "STRING" },
+                                options: {
+                                    type: "ARRAY",
+                                    items: { type: "STRING" },
+                                    minItems: 4,
+                                    maxItems: 4
+                                },
+                                correctIndex: { type: "INTEGER" },
+                                explanation: { type: "STRING" }
+                            },
+                            required: ["category", "vignette", "options", "correctIndex", "explanation"]
+                        }
                     }
                 })
             });
+            
             const data = await res.json();
-            currentCaseData = JSON.parse(data.candidates[0].content.parts[0].text.trim());
+            
+            // Extract text cleanly, discarding any leftover hidden markdown text if it exists
+            let rawText = data.candidates[0].content.parts[0].text.trim();
+            if (rawText.startsWith("```")) {
+                rawText = rawText.replace(/^```json\s*/i, "").replace(/```$/, "").trim();
+            }
+            
+            currentCaseData = JSON.parse(rawText);
             renderAICase();
         } catch (e) {
-            document.getElementById("question-vignette").textContent = "The testing engine experienced an adjustment latency timeout. Switch focus or refresh to clear.";
+            console.error("Parsing breakdown tracking:", e);
+            document.getElementById("question-vignette").textContent = "The testing engine hit a structural data mismatch. Tap another focus area or click Next to clear.";
             document.getElementById("loading-spinner").style.display = "none";
             document.getElementById("interactive-quiz-workspace").style.display = "block";
         }
