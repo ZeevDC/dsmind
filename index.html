@@ -214,15 +214,15 @@
     });
 
     async function loadGlobalApiKey() {
-        try {
-            const snapshot = await get(ref(database, 'global_config/gemini_api_key'));
-            if (snapshot.exists()) {
-                globalSecretApiKey = snapshot.val();
-            } else {
-                console.error("Centralized key could not be located in Firebase root.");
-            }
-        } catch(e) { console.error("Database connection block fault:", e); }
-    }
+    try {
+        const snapshot = await get(ref(database, 'global_config/gemini_api_key'));
+        if (snapshot.exists()) {
+            globalSecretApiKey = snapshot.val(); // App grabs it securely here
+        } else {
+            console.error("Centralized key could not be located in Firebase root.");
+        }
+    } catch(e) { console.error("Database connection block fault:", e); }
+}
 
     function toggleAuthMode() {
         isSignUpMode = !isSignUpMode;
