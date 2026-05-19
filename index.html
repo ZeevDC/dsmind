@@ -206,11 +206,23 @@
             currentUser = user;
             document.getElementById("auth-shield").style.display = "none";
             
-            await Promise.all([loadUserDataFromCloud(), loadGlobalApiKey()]);
+            try {
+                // Safeguard initialization steps so database latency doesn't break auth
+                await loadUserDataFromCloud();
+            } catch (e) {
+                console.warn("User profile initialized locally. Cloud profile pending sync:", e);
+            }
+
+            try {
+                await loadGlobalApiKey();
+            } catch (e) {
+                console.warn("Centralized API key check bypassed. Awaiting manual input entry:", e);
+            }
             
             processStreakLogic();
             refreshUiLayout();
-            if(globalSecretApiKey) {
+            
+            if (globalSecretApiKey) {
                 fetchNextAICase();
             }
         } else {
