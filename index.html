@@ -314,15 +314,18 @@
         const promptRules = `You are a professional clinical psychology board examiner drafting high-yield multiple-choice questions for the licensing board exam. Create realistic, detailed diagnostic vignettes. Respond with ONLY raw JSON (no markdown code blocks): {"category": "${selectedChapter}", "vignette": "Vignette text...", "options": ["Option A","Option B","Option C","Option D"], "correctIndex": 0, "explanation": "Why..."}`;
 
         try {
-            const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${globalSecretApiKey}`, {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                    contents: [{ parts: [{ text: `Generate a multiple-choice case scenario matching clinical criteria for: ${selectedChapter}.` }] }],
-                    systemInstruction: { parts: [{ text: promptRules }] },
-                    generationConfig: { responseMimeType: "application/json" }
-                })
-            });
+            const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent`, {
+    method: "POST",
+    headers: { 
+        "Content-Type": "application/json",
+        "x-goog-api-key": globalSecretApiKey // Passes the key via clean secure header!
+    },
+    body: JSON.stringify({
+        contents: [{ parts: [{ text: `Generate a multiple-choice case scenario testing diagnostic criteria on: ${selectedChapter}.` }] }],
+        systemInstruction: { parts: [{ text: promptRules }] },
+        generationConfig: { responseMimeType: "application/json" }
+    })
+});
             const data = await res.json();
             currentCaseData = JSON.parse(data.candidates[0].content.parts[0].text.trim());
             renderAICase();
