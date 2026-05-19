@@ -309,7 +309,6 @@ You must return a raw JSON object matching this exact example layout structure:
                 body: JSON.stringify({
                     contents: [{ parts: [{ text: coreInstructions }] }],
                     generationConfig: { 
-                        // Feature A: Removed explicit Schema Restriction to prevent layout generation bottlenecks
                         responseMimeType: "application/json",
                         temperature: 1.0
                     }
@@ -319,17 +318,21 @@ You must return a raw JSON object matching this exact example layout structure:
             const data = await res.json();
             if (data.error) throw new Error(data.error.message);
             
+            // 🛡️ CRITICAL PLUG: Safely check if the backend response structure is present
+            if (!data.candidates || !data.candidates[0] || !data.candidates[0].content) {
+                console.warn("API quota restriction or empty return structure detected. Retrying...");
+                return fetchNextAICase();
+            }
+            
             let rawText = data.candidates[0].content.parts[0].text.trim();
             
             if (rawText.includes("```")) {
                 rawText = rawText.replace(/```json/gi, "").replace(/```/g, "").trim();
             }
             
-            // Feature B: Aggressive character index cropping to pull only content found inside core curly brace fields
             const firstBrace = rawText.indexOf("{");
             const lastBrace = rawText.lastIndexOf("}");
             
-            // Auto Recovery Escape: If structural elements fail completely, rerun natively once
             if (firstBrace === -1 || lastBrace === -1) {
                 console.warn("Structural framing lost. Auto-retriggering module request.");
                 return fetchNextAICase(); 
