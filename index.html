@@ -337,7 +337,6 @@ Provide your entire response as a single, valid minified JSON object on one line
             
             if (firstBrace === -1 || lastBrace === -1) {
                 console.warn("Brace elements missing. Retrying runtime content...");
-                return fetchNextAICase(); 
             }
             
             rawText = rawText.substring(firstBrace, lastBrace + 1);
@@ -352,7 +351,6 @@ Provide your entire response as a single, valid minified JSON object on one line
                 renderAICase();
             } catch (parseError) {
                 console.warn("JSON Sanitizer failed to clean string format. Forcing auto-retry...", parseError);
-                return fetchNextAICase(); // Silently call the API again for a fresh question instead of displaying an error screen
             }
             
         } catch (e) {
