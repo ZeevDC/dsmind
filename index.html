@@ -91,6 +91,7 @@
             <input type="password" id="auth-password" placeholder="Password" />
             <div class="auth-buttons">
                 <button class="btn btn-primary" id="auth-primary-btn" onclick="handleAuthSubmit()">Log In</button>
+                <button class="btn" id="guest-btn" onclick="continueAsGuest()">Continue as Guest</button>
             </div>
             <div class="auth-toggle-link" id="auth-toggle-str" onclick="toggleAuthMode()">Don't have an account? Sign Up</div>
         </div>
@@ -179,22 +180,84 @@
 
     let currentUser = null;
     let isSignUpMode = false;
+    let isGuestMode = false;
     let currentCaseData = null;
     let selectedIdx = null;
     let globalSecretApiKey = ""; 
 
     let userDataStore = { totalXp: 0, currentCombo: 0, globalAttempts: 0, globalCorrect: 0, dailyStreak: 0, lastStudyDate: "" };
     const XP_PER_LEVEL = 300;
+    const LOCAL_STORAGE_KEY = "dsmind-local-progress";
+    const localQuestionBank = [
+        {
+            category: "Anxiety Disorders",
+            vignette: "A 24-year-old graduate student reports persistent worry about performance, sleep disturbance, and muscle tension that has lasted for months. The symptoms are causing marked impairment in school and relationships.",
+            options: ["Panic disorder", "Generalized anxiety disorder", "Adjustment disorder", "Social anxiety disorder"],
+            correctIndex: 1,
+            explanation: "Generalized anxiety disorder is characterized by excessive worry and associated physical symptoms for more than six months, with impairment in daily functioning."
+        },
+        {
+            category: "Depressive Disorders",
+            vignette: "A 42-year-old worker describes anhedonia, low energy, and poor concentration for two weeks after a major work setback. The symptoms are severe enough to disrupt daily function but are not yet persistent for the full two-month threshold.",
+            options: ["Major depressive disorder", "Persistent depressive disorder", "Bipolar II disorder", "Adjustment disorder with depressed mood"],
+            correctIndex: 3,
+            explanation: "Adjustment disorder with depressed mood is a stress-related reaction that occurs within three months of a stressor and is less persistent than major depressive disorder."
+        },
+        {
+            category: "Bipolar and Related Disorders",
+            vignette: "A 19-year-old college student has had episodes of unusually elevated mood, reduced need for sleep, and excessive goal-directed activity lasting several days, followed by depressive symptoms that cause impairment.",
+            options: ["Cyclothymic disorder", "Bipolar I disorder", "Bipolar II disorder", "Major depressive disorder"],
+            correctIndex: 1,
+            explanation: "Bipolar I disorder requires at least one manic episode, which is marked by abnormally elevated or irritable mood and increased activity or energy."
+        },
+        {
+            category: "Schizophrenia Spectrum and Other Psychotic Disorders",
+            vignette: "A 23-year-old man reports hearing voices commenting on his behavior and has become socially withdrawn with declining functioning over the last year.",
+            options: ["Schizophrenia", "Schizotypal personality disorder", "Delusional disorder", "Substance-induced psychosis"],
+            correctIndex: 0,
+            explanation: "Schizophrenia involves at least two core symptoms such as hallucinations, delusions, disorganized speech, or negative symptoms, lasting at least six months."
+        },
+        {
+            category: "Obsessive-Compulsive and Related Disorders",
+            vignette: "A 31-year-old patient spends hours each day checking locks and washing hands, recognizing that the behaviors are excessive and distressing but feeling unable to stop.",
+            options: ["Obsessive-compulsive disorder", "Generalized anxiety disorder", "Body dysmorphic disorder", "Autism spectrum disorder"],
+            correctIndex: 0,
+            explanation: "Obsessive-compulsive disorder is characterized by intrusive obsessions and compulsions that are time-consuming and impairing."
+        },
+        {
+            category: "Trauma- and Stressor-Related Disorders",
+            vignette: "A 37-year-old veteran has recurrent intrusive memories of combat, avoidance of reminders, and hyperarousal after surviving a traumatic event for more than a month.",
+            options: ["Acute stress disorder", "Adjustment disorder", "Posttraumatic stress disorder", "Panic disorder"],
+            correctIndex: 2,
+            explanation: "Posttraumatic stress disorder is diagnosed when trauma-related symptoms persist beyond one month and cause significant impairment."
+        },
+        {
+            category: "Neurodevelopmental Disorders",
+            vignette: "A 7-year-old child has persistent difficulties with attention, impulsivity, and organization that began before age 12 and are present in multiple settings.",
+            options: ["Attention-deficit/hyperactivity disorder", "Autism spectrum disorder", "Intellectual disability", "Specific learning disorder"],
+            correctIndex: 0,
+            explanation: "ADHD is a neurodevelopmental disorder involving inattention and/or hyperactivity-impulsivity that begins in childhood and affects functioning."
+        },
+        {
+            category: "Personality Disorders",
+            vignette: "A 35-year-old patient has longstanding patterns of unstable relationships, impulsivity, and intense emotional shifts, with significant distress and interpersonal dysfunction.",
+            options: ["Borderline personality disorder", "Avoidant personality disorder", "Obsessive-compulsive personality disorder", "Narcissistic personality disorder"],
+            correctIndex: 0,
+            explanation: "Borderline personality disorder is associated with marked instability in relationships, self-image, and affect, along with impulsivity."
+        }
+    ];
 
     window.handleAuthSubmit = handleAuthSubmit;
     window.toggleAuthMode = toggleAuthMode;
     window.logOutUser = logOutUser;
+    window.continueAsGuest = continueAsGuest;
     window.fetchNextAICase = fetchNextAICase;
     window.evaluateAnswer = evaluateAnswer;
     window.selectOptIdx = selectOptIdx;
 
     onAuthStateChanged(auth, async (user) => {
         if (user) {
+            isGuestMode = false;
             currentUser = user;
             document.getElementById("auth-shield").style.display = "none";
             await Promise.all([loadUserDataFromCloud(), loadGlobalApiKey()]);
@@ -203,17 +266,47 @@
             fetchNextAICase();
         } else {
             currentUser = null;
+            isGuestMode = false;
             document.getElementById("auth-shield").style.display = "flex";
         }
     });
 
+    function loadPersistedUserData() {
+        try {
+            const raw = localStorage.getItem(LOCAL_STORAGE_KEY);
+            if (raw) {
+                userDataStore = { ...userDataStore, ...JSON.parse(raw) };
+            }
+        } catch (e) {
+            console.warn("Unable to restore local progress:", e);
+        }
+    }
+
+    function savePersistedUserData() {
+        localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(userDataStore));
+    }
+
+    function continueAsGuest() {
+        isGuestMode = true;
+        currentUser = { uid: "guest", email: "guest@local" };
+        loadPersistedUserData();
+        document.getElementById("auth-shield").style.display = "none";
+        processStreakLogic();
+        refreshUiLayout();
+        fetchNextAICase();
+    }
+
     async function loadGlobalApiKey() {
+        const queryKey = new URLSearchParams(window.location.search).get("apiKey");
+        const runtimeKey = window.__DSMIND_GEMINI_API_KEY__ || queryKey || "";
+        if (runtimeKey) {
+            globalSecretApiKey = runtimeKey.trim();
+            return;
+        }
         try {
             const snapshot = await get(ref(database, 'global_config/gemini_api_key'));
             if (snapshot.exists()) {
                 globalSecretApiKey = snapshot.val().trim();
-            } else {
-                document.getElementById("question-vignette").textContent = "Administrative Error: Shared AI Access Key is missing from the database.";
             }
         } catch(e) { console.error("Database handshake issue:", e); }
     }
@@ -239,14 +332,30 @@
         } catch (err) { alert(err.message); }
     }
 
-    async function logOutUser() { await signOut(auth); }
+    async function logOutUser() {
+        if (isGuestMode) {
+            isGuestMode = false;
+            currentUser = null;
+            document.getElementById("auth-shield").style.display = "flex";
+            return;
+        }
+        await signOut(auth);
+    }
 
     async function loadUserDataFromCloud() {
+        if (isGuestMode) {
+            loadPersistedUserData();
+            return;
+        }
         const snapshot = await get(ref(database, 'users/' + currentUser.uid));
         if (snapshot.exists()) { userDataStore = { ...userDataStore, ...snapshot.val() }; }
     }
 
     async function pushProgressToCloud() {
+        if (isGuestMode) {
+            savePersistedUserData();
+            return;
+        }
         if (currentUser) { await update(ref(database, 'users/' + currentUser.uid), userDataStore); }
     }
 
@@ -276,8 +385,20 @@
     }
 
     // 🚀 STABLE PARSING LOGIC ENGINE (Includes user parameters requested)
+    function buildLocalCase(selectedChapter) {
+        const chapterLabel = selectedChapter || "any random DSM-5 disorder chapter";
+        const matchingCases = localQuestionBank.filter(item => item.category === chapterLabel || chapterLabel === "any random DSM-5 disorder chapter");
+        const sourceCase = matchingCases.length > 0 ? matchingCases[Math.floor(Math.random() * matchingCases.length)] : localQuestionBank[0];
+        return {
+            category: chapterLabel,
+            vignette: sourceCase.vignette,
+            options: sourceCase.options,
+            correctIndex: sourceCase.correctIndex,
+            explanation: sourceCase.explanation
+        };
+    }
+
     async function fetchNextAICase() {
-        if (!globalSecretApiKey) return;
         document.getElementById("interactive-quiz-workspace").style.display = "none";
         document.getElementById("loading-spinner").style.display = "block";
         document.getElementById("explanation-box").style.display = "none";
@@ -287,6 +408,15 @@
         document.getElementById("submit-btn").disabled = true;
 
         const selectedChapter = document.getElementById("focus-select").value;
+
+        if (!globalSecretApiKey) {
+            currentCaseData = buildLocalCase(selectedChapter);
+            renderAICase();
+            document.getElementById("rewards-banner").textContent = "Local review mode is active. The app is fully usable without an API key.";
+            document.getElementById("rewards-banner").className = "rewards-ticker rewards-fail";
+            document.getElementById("rewards-banner").style.display = "block";
+            return;
+        }
         
         const ages = ["a 6-year-old child", "a 17-year-old adolescent", "a 24-year-old graduate student", "a 42-year-old worker", "a 71-year-old retiree"];
         const environments = ["an outpatient therapy group", "an emergency room intake", "a primary care office", "an inpatient psychiatric unit"];
@@ -357,9 +487,11 @@ Provide your entire response as a single, valid minified JSON object on one line
             
         } catch (e) {
             console.error("Layout Handshake Failure Log:", e);
-            document.getElementById("question-vignette").textContent = "The testing engine encountered an unexpected data layout formatting anomaly. Click another study area or tap Next to refresh.";
-            document.getElementById("loading-spinner").style.display = "none";
-            document.getElementById("interactive-quiz-workspace").style.display = "block";
+            currentCaseData = buildLocalCase(selectedChapter);
+            renderAICase();
+            document.getElementById("rewards-banner").textContent = "The AI service failed, so a local case is being shown instead.";
+            document.getElementById("rewards-banner").className = "rewards-ticker rewards-fail";
+            document.getElementById("rewards-banner").style.display = "block";
         }
     }
 
