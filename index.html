@@ -74,6 +74,10 @@
         .rewards-ticker { margin-bottom: 15px; padding: 12px; border-radius: 8px; text-align: center; font-weight: bold; display: none; }
         .rewards-success { background-color: #e8f5e9; color: #1b5e20; border: 1px solid #a5d6a7; }
         .rewards-fail { background-color: var(--strawberry-light); color: var(--strawberry-dark); border: 1px solid var(--strawberry-pink); }
+        .api-status { margin-bottom: 12px; padding: 10px 12px; border-radius: 10px; font-size: 13px; font-weight: 700; display: flex; align-items: center; justify-content: center; gap: 8px; }
+        .api-status.connected { background-color: #e8f5e9; color: #1b5e20; border: 1px solid #a5d6a7; }
+        .api-status.failed { background-color: var(--strawberry-light); color: var(--strawberry-dark); border: 1px solid var(--strawberry-pink); }
+        .api-status.pending { background-color: #fffdf0; color: var(--matcha-dark); border: 1px solid var(--matcha-light); }
 
         .explanation-panel { margin-top: 24px; background-color: #FAF4EB; border: 2px dashed var(--matcha-medium); border-radius: 12px; padding: 20px; display: none; }
         .loading-overlay { display: none; text-align: center; padding: 40px 0; }
@@ -138,6 +142,7 @@
     </div>
 
     <div class="main-content">
+        <div class="api-status pending" id="api-status">⏳ Checking live API connection…</div>
         <div class="rewards-ticker" id="rewards-banner"></div>
         <div class="loading-overlay" id="loading-spinner"><div class="spinner"></div><p style="color: var(--matcha-dark); font-weight: 600;">Sifting database modules...</p></div>
 
@@ -296,19 +301,33 @@
         fetchNextAICase();
     }
 
+    function updateApiStatus(type, message) {
+        const el = document.getElementById("api-status");
+        el.className = `api-status ${type}`;
+        el.textContent = message;
+    }
+
     async function loadGlobalApiKey() {
+        updateApiStatus("pending", "⏳ Checking live API connection…");
         const queryKey = new URLSearchParams(window.location.search).get("apiKey");
         const runtimeKey = window.__DSMIND_GEMINI_API_KEY__ || queryKey || "";
         if (runtimeKey) {
             globalSecretApiKey = runtimeKey.trim();
+            updateApiStatus("connected", "✅ Live API connected — generating AI questions");
             return;
         }
         try {
             const snapshot = await get(ref(database, 'global_config/gemini_api_key'));
             if (snapshot.exists()) {
                 globalSecretApiKey = snapshot.val().trim();
+                updateApiStatus("connected", "✅ Live API connected — generating AI questions");
+            } else {
+                updateApiStatus("failed", "⚠️ Live API unavailable — using local review mode");
             }
-        } catch(e) { console.error("Database handshake issue:", e); }
+        } catch(e) {
+            console.error("Database handshake issue:", e);
+            updateApiStatus("failed", "⚠️ Live API unavailable — using local review mode");
+        }
     }
 
     function toggleAuthMode() {
@@ -412,6 +431,7 @@
         if (!globalSecretApiKey) {
             currentCaseData = buildLocalCase(selectedChapter);
             renderAICase();
+            updateApiStatus("failed", "⚠️ Live API unavailable — using local review mode");
             document.getElementById("rewards-banner").textContent = "Local review mode is active. The app is fully usable without an API key.";
             document.getElementById("rewards-banner").className = "rewards-ticker rewards-fail";
             document.getElementById("rewards-banner").style.display = "block";
@@ -479,6 +499,7 @@ Provide your entire response as a single, valid minified JSON object on one line
 
             try {
                 currentCaseData = JSON.parse(rawText);
+                updateApiStatus("connected", "✅ Live API connected — generating AI questions");
                 renderAICase();
             } catch (parseError) {
                 console.warn("JSON Sanitizer failed to clean string format. Forcing auto-retry...", parseError);
@@ -488,6 +509,7 @@ Provide your entire response as a single, valid minified JSON object on one line
         } catch (e) {
             console.error("Layout Handshake Failure Log:", e);
             currentCaseData = buildLocalCase(selectedChapter);
+            updateApiStatus("failed", "⚠️ Live API unavailable — using local review mode");
             renderAICase();
             document.getElementById("rewards-banner").textContent = "The AI service failed, so a local case is being shown instead.";
             document.getElementById("rewards-banner").className = "rewards-ticker rewards-fail";
